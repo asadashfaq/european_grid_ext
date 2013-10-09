@@ -173,92 +173,94 @@ def balancing_energy():
 
     print "The minimum balancing energy is:",max_balancing
 
-def solve_lin_interpol(scalefactors):
-    """ This function solves the European power grid several times,
-        with different scalings of the current capacity layout after
-        rule A in Rolando et. al. 2013. The results are saved as
-        lin_int_<factor>.npz, and lin_int_<factor_flows.npy.
-        The total capacities for the layouts are saved to
-        total_caps_A.npy, arranged in the same way as the scalefactors
-        list.
+def solve_lin_interpol(scalefactor):
+    """ This function solves the European power grid
+        with the current capacity layout scaled after
+        rule A in Rolando et. al. 2013. The result is saved as
+        lin_int_<factor>.npz, and lin_int_<factor>_flows.npy.
 
         """
     europe = EU_Nodes()
-    h0s = get_h0s_A(scalefactors, europe)
+    h0 = get_h0_A(scalefactor, europe)
 
-    for i in xrange(len(scalefactors)):
-        europe_solved, flows = au.solve(europe, h0=h0s[i])
-        filename = "".join(["lin_int_",str(scalefactors[i])])
-        flowpath = "".join(["./results/lin_int_",str(scalefactors[i]),
-                            "_flows"])
-        europe_solved.save_nodes(filename)
-        np.save(flowpath, flows)
+    europe_solved, flows = au.solve(europe, h0=h0)
+    filename = "".join(["lin_int_",str(scalefactor).replace('.','_')])
+    flowpath = "".join(["./results/lin_int_",
+                        str(scalefactor).replace('.','_'), "_flows"])
+    europe_solved.save_nodes(filename)
+    np.save(flowpath, flows)
 
-    total_capacities = get_total_capacities(h0s)
-    np.save("./results/total_caps_A", total_capacities)
-
-
-def solve_quant_interpol(quantiles):
-    """ This function solves the European power grid several times,
-        with different capacity layouts after, scaled af
-        rule C in Rolando et. al. 2013. The results are saved as
-        quant_int_<factor>.npz, and quant_int_<factor_flows.npy.
-        The total capacities for the layouts are saved to
-        total_caps_C.npy, arranged in the same order as the
-        quantiles list.
+def solve_linquant_interpol(scalefactor):
+    """ This function solves the European power grid
+        with capacity layout determined by rule B in
+        Rolando et. al. 2013. The results are saved as
+        linquant_int_<scalefactor>.npz,
+        linquant_int_<scalefactor>_flows.npy.
 
         """
 
     europe = EU_Nodes()
-    h0s = get_h0s_C(quantiles)
+    h0 = get_h0_B(scalefactor)
 
-    for i in xrange(len(quantiles)):
-        europe_solved, flows = au.solve(europe, h0=h0s[i])
-        filename = "".join(["quant_int_", str(quantiles[i]).replace(".","_")])
-        flowpath = "".join(["./results/quant_int_",
-                            str(quantiles[i]).replace(".","_"), "_flows"])
-        europe_solved.save_nodes(filename)
-        np.save(flowpath, flows)
-
-    total_capacities = get_total_capacities(h0s)
-    np.save("./results/total_caps_C", total_capacities)
+    europe_solved, flows = au.solve(europe, h0=h0)
+    filename = "".join(["linquant_int_",str(scalefactor).replace('.','_')])
+    flowpath = "".join(["./results/linquant_int_",
+                        str(scalefactor).replace('.','_'), "_flows"])
+    europe_solved.save_nodes(filename)
+    np.save(flowpath, flows)
 
 
-def get_h0s_A(scalefactors, nodes):
-    """ This function returns a vector of link capacities to be used
-        with the solver. This function generates after the rule for
-        interpolation A in Rolando et. al. 2013, that is
+def solve_quant_interpol(quantile):
+    """ This function solves the European power grid
+        with capacity layout determined by rule C in
+        Rolando et. al 2013. The result is saved as
+        quant_int_<quantile>.npz and quant_int_<quantile>_flows.npy
+
+        """
+
+    europe = EU_Nodes()
+    h0 = get_h0_C(quantile)
+
+    europe_solved, flows = au.solve(europe, h0=h0)
+    filename = "".join(["quant_int_", str(quantile).replace(".","_")])
+    flowpath = "".join(["./results/quant_int_",
+                            str(quantile).replace(".","_"), "_flows"])
+    europe_solved.save_nodes(filename)
+    np.save(flowpath, flows)
+
+
+def get_h0_A(scalefactor, nodes):
+    """ This function returns a h0 vector of link capacities to be
+        used with the solver. This function generates after the rule
+        for interpolation A in Rolando et. al. 2013, that is
         f_l = min(a*f_l, f_l99Q), (see pp. 10).
 
         """
 
     h99 = au.get_quant_caps(0.99)
     h_present = au.AtoKh(nodes)[-2];
-    h0s = []
 
-    for a in scalefactors:
-        h0 = a*h_present
-        for i in xrange(h99.size):
-            if (h99[i] < a*h_present[i]):
-                h0[i] = h99[i]
-        h0s.append(h0)
+    h0 = scalefactor*h_present
+    for i in xrange(h99.size):
+        if (h99[i] < h0[i]):
+            h0[i] = h99[i]
 
-    return h0s
+    return h0
+
+def get_h0_B(scalefactor):
+    return scalefactor*au.get_quant_caps(0.99)
 
 
-def get_h0s_C(quantiles):
+def get_h0_C(quantile):
     """ This function returns a vector of link capacities to be used
         with the solver. The capacities are genereated after rule C
         for interpolation in Rolando et. al. 2013 so f_l = f_l^cQ
 
         """
 
-    h0s = []
+    h0 = au.get_quant_caps(quantile)
 
-    for c in quantiles:
-        h0s.append(au.get_quant_caps(c))
-
-    return h0s
+    return h0
 
 
 def get_total_capacities(h0s):
