@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import pylab
+from scipy.interpolate import interp1d
 
 import aurespf.solvers as au
 from EUgrid import EU_Nodes
@@ -80,6 +82,74 @@ def smooth_hist(N):
                     + str(n.label) + '.pdf', dpi=400)
 
             plt.close()
+
+def layouts_hist():
+    """ Draws the figure 7. from Rolando et. al. 2013, with
+        mismatch and load histograms for different capacity layouts
+        in Spain, Germany and Denmark.
+
+        """
+    N_zero = EU_Nodes()
+    N_present = EU_Nodes(load_filename="present.npz")
+    N_interm = EU_Nodes(load_filename="intermediate.npz")
+    N_99Q = EU_Nodes(load_filename="quant_int_0_99.npz")
+
+    layouts = [N_present, N_interm, N_99Q]
+
+    ## create a dictionary so countries are easier to get out
+    ## of the nodes-objects. e.g as N_interm[countrydict['ES']]
+    countries = ['ES', 'DE', 'DK']
+    countrydict = {}
+    for n in N_zero:
+        if n.label in countries:
+            countrydict[str(n.label)] = n.id
+
+    xmin = -2
+    xmax = 3.001
+    bins = np.linspace(xmin, xmax, 250)
+
+    plt.ion()
+    f, axarr = plt.subplots(3, sharex=True)
+    labels = ['Present layout', 'Intermediate layout',
+              '99% Quantile layout']
+    plotcount = 0;
+    for country in countries:
+        n0 = N_zero[countrydict[country]]
+        Load = -n0.load/n0.mean # This gives us the normalized load
+        load_hist = plt.hist(Load, bins=bins, visible=0, normed=1)[0]
+        axarr[plotcount].plot(bins[0:-1], load_hist, label="Load")
+        axarr[plotcount].set_title(country)
+        zero_hist = plt.hist(n0.mismatch/n0.mean,bins=bins,visible=0,
+                                normed=1)[0]
+        axarr[plotcount].plot(bins[0:-1], zero_hist,
+                               label="Zero transmission")
+
+        linecount = 0;
+        for layout in layouts:
+            node = layout[countrydict[country]]
+
+            mismatch = node.curtailment - node.balancing
+            nonzero_mismatch = []
+            for w in mismatch:
+                if w>=1 or w<=-1:
+                    nonzero_mismatch.append(w/node.mean)
+            print len(nonzero_mismatch), node.label, str(layout), linecount
+            hist_ydata = pylab.hist(nonzero_mismatch, bins=bins, normed=0,
+                                    visible=0)[0]/(abs(bins[0]-bins[1])*70128)
+            axarr[plotcount].plot(bins[0:-1], hist_ydata,
+                                  label = labels[linecount])
+            linecount += 1;
+
+        axarr[plotcount].legend()
+        axarr[plotcount].set_ylabel("$P(\Delta - KF)$")
+        axarr[plotcount].axis([-2,3.001,0,1.1*max(load_hist)])
+        plotcount += 1
+
+
+    plt.gcf().set_size_inches([8.5, 3*8.5*0.4])
+    axarr[2].set_xlabel("Mismatch power [normalized]")
+    f.savefig("./Plotting practice/Multilayout.pdf")
+
 
 def flow_hist(link, title, mean=None, quantiles = False,
               flow_filename = 'results/copper_flows.npy',
@@ -171,7 +241,75 @@ def balancing_energy():
 
     max_balancing = mean_balancing_raw/total_mean_load
 
-    print "The minimum balancing energy is:",max_balancing
+
+
+    #### Calculate the current total capacity ################
+    # the hardcoded 10000 stems from a link, we don't know the
+    # actual capacity of, so it has been set to 10000 in the
+    # eadmat.txt file.
+    current_total_cap = sum(au.biggestpair(au.AtoKh(europe_raw)[-2])) - 10000
+
+    print min_balancing, max_balancing
+    scalefactorsA = [0.5, 1, 2, 4, 6, 8, 10, 12, 14]
+
+    #scalefactorsA = np.linspace(0,1,11) # for use with the alternative A rule
+    smoothA_cap, smoothA = get_bal_vs_cap(scalefactorsA, 'lin_int_', get_h0_A)
+    plt.plot(smoothA_cap, smoothA(smoothA_cap), 'r-', label='Interpolation A')
+
+    scalefactorsB = np.linspace(0, 2.5, 10)
+    smoothB_cap, smoothB = get_bal_vs_cap(scalefactorsB, 'linquant_int_', get_h0_B)
+    plt.plot(smoothB_cap, smoothB(smoothB_cap), 'g-', label='Interpolation B')
+
+    quantiles = [0.5, 0.8, 0.9, 0.95, 0.97, 0.99, 0.995, 0.999, 0.9995, 0.9999, 1]
+    smoothC_cap,smoothC = get_bal_vs_cap(quantiles, 'quant_int_', get_h0_C)
+    plt.plot(smoothC_cap,smoothC(smoothC_cap),'b-',
+             label="Interpolation C")
+
+    plt.hlines(min_balancing, 0, 900, linestyle='dashed')
+    plt.vlines(current_total_cap/1000, 0, 0.27, linestyle='dashed')
+    plt.xlabel("Total installed transmission capacity, [GW]")
+    plt.ylabel("Balancing energy [normalized]")
+    plt.axis([0, 900.1, .125, .27])
+    plt.yticks([.15,.17,.19,.21,.23,.25,.27])
+    plt.xticks([0,100,200,300,400,500,600,700,800,900])
+    plt.legend()
+    plt.tight_layout()
+
+    plt.savefig("./Plotting practice/balancing.pdf")
+
+def get_bal_vs_cap(iterlist, prefix, get_h0_fun):
+    """ Auxilary function for balancing_energy(). Example of use:
+        capacity, balancing = get_bal_vs_cap(scalefactors, 'lin_int_',
+        get_h0_A). Note the balancing that is returned is a function
+        of capacity, interpolated with cubic spline. The capacity
+        is in units of GW!
+
+        """
+    balancing = []
+    total_capacity = []
+
+    for q in iterlist:
+        filename = "".join([prefix, str(q).replace(".","_"), ".npz"])
+        nodes = EU_Nodes(load_filename = filename)
+        mean_balancing = np.mean(np.sum(n.balancing for n in nodes))
+        total_mean_load = np.sum(n.mean for n in nodes)
+        balancing.append(mean_balancing/total_mean_load)
+
+        total_capacity.append(get_total_capacity(get_h0_fun(q))/1000)
+
+    # uncomment this to force the interpolation to go through the
+    # endpoint expected from min_balancing and max_balancing
+    #if prefix == 'lin_int_':
+    #    total_capacity.insert(0,0)
+    #    total_capacity.append(900)
+    #   balancing.insert(0,0.242791209623)
+    #    balancing.append(0.151116828435)
+
+    smooth_balancing = interp1d(total_capacity, balancing, kind='cubic')
+    smooth_cap = np.linspace(total_capacity[0], total_capacity[-1],200)
+
+    return smooth_cap, smooth_balancing
+
 
 def solve_lin_interpol(scalefactor):
     """ This function solves the European power grid
@@ -181,7 +319,7 @@ def solve_lin_interpol(scalefactor):
 
         """
     europe = EU_Nodes()
-    h0 = get_h0_A(scalefactor, europe)
+    h0 = get_h0_A(scalefactor)
 
     europe_solved, flows = au.solve(europe, h0=h0)
     filename = "".join(["lin_int_",str(scalefactor).replace('.','_')])
@@ -229,7 +367,7 @@ def solve_quant_interpol(quantile):
     np.save(flowpath, flows)
 
 
-def get_h0_A(scalefactor, nodes):
+def get_h0_A(scalefactor):
     """ This function returns a h0 vector of link capacities to be
         used with the solver. This function generates after the rule
         for interpolation A in Rolando et. al. 2013, that is
@@ -237,6 +375,7 @@ def get_h0_A(scalefactor, nodes):
 
         """
 
+    nodes = EU_Nodes()
     h99 = au.get_quant_caps(0.99)
     h_present = au.AtoKh(nodes)[-2];
 
@@ -246,6 +385,16 @@ def get_h0_A(scalefactor, nodes):
             h0[i] = h99[i]
 
     return h0
+
+def get_h0_A2(scalefactor):
+    """ This function works returns a h0 vector,
+        created by downscaling the capacities in
+        the unconstrained flow by scalefactor.
+
+        """
+
+    return scalefactor*au.get_quant_caps(1)
+
 
 def get_h0_B(scalefactor):
     return scalefactor*au.get_quant_caps(0.99)
@@ -259,19 +408,17 @@ def get_h0_C(quantile):
         """
 
     h0 = au.get_quant_caps(quantile)
-
     return h0
 
 
-def get_total_capacities(h0s):
+def get_total_capacity(h0):
     """ This function takes a list of capacity-vectors and returns
-        a list of total capacities installed.
+        the total capacity installed.
 
         """
 
-    total_capacities = []
-    for h0 in h0s:
-        total_capacities.append(sum(au.biggestpair(h0)))
+    total_capacity = sum(au.biggestpair(h0))
 
-    return total_capacities
+    return total_capacity
+
 

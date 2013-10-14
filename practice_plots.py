@@ -2,7 +2,8 @@ import numpy as np
 
 import aurespf.solvers as au
 from EUgrid import EU_Nodes
-from magnus_figutils import simple_plot, smooth_hist, flow_hist
+from magnus_figutils import simple_plot, smooth_hist, flow_hist, \
+balancing_energy, layouts_hist
 
 europe = EU_Nodes(load_filename="copper.npz") # load solved copper
                                               # flow Europe, Nodes-
@@ -57,3 +58,12 @@ for j in au.AtoKh(europe)[-1]:
 flow_hist(link,"Flow from France to Spain", mean=france.mean, quantiles=True,
           savepath="./Plotting practice/", xlim=[-1.5,1], ylim=[0,1.5])
 
+### Reproduce Rolando et. al 2013 fig. 5 (Balancing vs transmission cap)
+### Saves in balancing.pdf
+balancing_energy()
+
+### Reproduce Rolando et. al 2013 fig. 7 (Normalized non-zero dists.
+### for residual load (below zero) and excess generation (above zero)
+### Saves in Multilayouts.pdf
+
+layouts_hist()
