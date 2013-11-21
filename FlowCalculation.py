@@ -36,6 +36,14 @@ class FlowCalculation:
                 return 'World'
             else:
                 return self.layout.replace('_','-')
+        elif variationparameter=='alphas':
+            if self.alphas=='aHE':
+                return r'Optimal $\alpha_W$ for each region'
+            if self.alphas=='aHO1':
+                return r'$\alpha_W$ = 1 for all regions'
+            if self.alphas=='aHO0':
+                return r'$\alpha_W$ = 0 for all regions'
+
 
         elif variationparameter=='capacities':
             if self.capacities=='copper':
@@ -70,6 +78,9 @@ class FlowCalculation:
 
         if field == 'layout':
             return ''.join([self.alphas, '_', self.capacities, '_',
+                            self.solvermode])
+        if field == 'alphas':
+            return ''.join([self.layout, '_', self.capacities, '_',
                             self.solvermode])
         elif field == 'capacities':
             return ''.join([self.layout, '_', self.alphas, '_',

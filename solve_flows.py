@@ -14,6 +14,10 @@ def solve_flow(flow_calc):
 
     if flow_calc.alphas=='aHE':
         nodes = world_Nodes(admat=admat)
+    elif flow_calc.alphas=='aHO0':
+        nodes = world_Nodes(admat=admat, alphas=np.zeros(8))
+    elif flow_calc.alphas=='aHO1':
+        nodes = world_Nodes(admat=admat, alphas=np.ones(8))
     else:
         sys.stderr.write('The object has an distribution of mixes that\
                           is not accounted for.')
@@ -44,9 +48,15 @@ def solve_flow(flow_calc):
         print h0.mean()
         solved_nodes, flows = au.solve(nodes, copper=0, h0=h0, mode=mode)
         print "Checkpt. hq99"
+    elif flow_calc.capacities.endswith('q99'):
+        scale = float(flow_calc.capacities[0:-3])
+        h0 = scale*au.get_quant_caps(filename=copperflow_filename)
+        print h0
+        solved_nodes, flows = au.solve(nodes, copper=0, h0=h0, mode=mode)
+        print "Checkpt. a*q99"
     else:
-        sys.stderr.write('The capacities must be either "copper", "q99" or\
-                            "hq99"')
+        sys.stderr.write('The capacities must be either "copper", "q99",\
+                            "hq99", or on the form "<number>q99"')
 
     solved_nodes.save_nodes(filename)
     print filename
@@ -55,23 +65,4 @@ def solve_flow(flow_calc):
     except NameError:
         print "Flows not defined."
     np.save('./results/' + filename + '_flows', flows)
-
-
-####### This is where the calculation is actally performedi ######
-
-layouts = ['w', 'EU_RU', 'EU_NA', 'EU_ME', 'EU_RU_NA_ME', 'CN_JK',
-           'CN_SE', 'CN_SE_JK']
-alphas = ['aHE']
-capacities = ['q99', 'hq99']
-modes = ['sqr'] # ['lin', 'sqr']
-
-flow_calcs = []
-for L in layouts:
-    for a in alphas:
-        for c in capacities:
-            for m in modes:
-                flow_calcs.append(FlowCalculation(L, a, c, m))
-
-pool = mp.Pool(mp.cpu_count())
-pool.map(solve_flow, flow_calcs)
 

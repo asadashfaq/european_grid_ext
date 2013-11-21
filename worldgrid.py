@@ -3,7 +3,7 @@ import aurespf.solvers as au
 
 def world_Nodes(admat=None, load_filename=None, full_load=False, alphas=None):
 
-    if not alphas:
+    if alphas==None:
         alphas = np.load("./data/wOptimalMixes.npy")
 
     if not admat:
