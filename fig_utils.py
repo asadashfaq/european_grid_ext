@@ -315,10 +315,7 @@ def bal_vs_cap_data():
             max_balancing.append(np.sum(np.max(n.balancing) for n in nodes)\
                                     /total_mean_load)
 
-            balancing_caps99.append(np.sum(\
-                                           np.max([au.get_q(n.balancing,0.99),\
-                                                -au.get_q(n.balancing, 0.01)])\
-                                               for n in nodes)/total_mean_load)
+            balancing_caps99.append(np.sum(au.get_q(n.balancing,0.99) for n in nodes)/total_mean_load)
             total_capacity.append(a*total_caps_q99)
 
         if mode == 'lin':
@@ -335,6 +332,22 @@ def bal_vs_cap_data():
     np.savez('./results/w_bal_vs_cap_data99.npz', TC_lin=TC_lin,\
             BE_lin=BE_lin, BC_lin=BC_lin, BC99_lin=BC99_lin,\
             TC_sqr=TC_sqr, BE_sqr=BE_sqr, BC_sqr=BC_sqr, BC99_sqr=BC99_sqr)
+
+def BC_vs_region_data():
+    linNodes = world_Nodes(load_filename="w_aHE_copper_lin.npz")
+    BC99_lin = []
+    labels = []
+    for n in linNodes:
+        BC99_lin.append(au.get_q(n.balancing, 0.99)/n.mean)
+        labels.append(str(n.label))
+
+    sqrNodes = world_Nodes(load_filename="w_aHE_copper_sqr.npz")
+    BC99_sqr = au.get_q(sqrNodes[4].balancing, 0.99)/sqrNodes[4].mean
+
+    np.savez('./results/w_BC_regions.npz', BClin = BC99_lin, labels = labels,
+            BCsqr = BC99_sqr)
+
+
 
 
 def BE_vs_TC(datafilename='./results/w_bal_vs_cap_data.npz', region='w',
@@ -405,14 +418,17 @@ def BC_vs_TC(datafilename='./results/w_bal_vs_cap_data.npz', region='w',
     plt.xlabel('Total installed transmission capacity [TW]')
     plt.ylabel('Necessary balancing capacity [normalized]')
     plt.legend(loc=3)
-    plt.vlines(1e-6*0.5*data['TC_lin'][-1], 0, 2, linestyle='dashed')
-    plt.text(1.04*1e-6*0.5*data['TC_lin'][-1],\
-            1.2*np.mean([BC_lin[-1],BC_sqr[-1]]),
-            r'99$\%$ quantile - linear', rotation='vertical')
-    plt.vlines(1e-6*0.5*data['TC_sqr'][-1], 0, 2, linestyle='dashed')
-    plt.text(1.03*1e-6*0.5*data['TC_sqr'][-1],\
-            1.2*np.mean([BC_lin[-1],BC_sqr[-1]]),
-            r'99$\%$ quantile - square', rotation='vertical')
+    midindex = len(BC_lin)/2
+    plt.plot(data['TC_lin'][midindex]/1e6, BC_lin[midindex], 'x')
+    plt.plot(data['TC_sqr'][midindex]/1e6, BC_sqr[midindex], 'x')
+    #plt.vlines(1e-6*0.5*data['TC_lin'][-1], 0, 2, linestyle='dashed')
+    #plt.text(1.04*1e-6*0.5*data['TC_lin'][-1],\
+    #        1.2*np.mean([BC_lin[-1],BC_sqr[-1]]),
+    #        r'99$\%$ quantile - linear', rotation='vertical')
+    #plt.vlines(1e-6*0.5*data['TC_sqr'][-1], 0, 2, linestyle='dashed')
+    #plt.text(1.03*1e-6*0.5*data['TC_sqr'][-1],\
+    #        1.2*np.mean([BC_lin[-1],BC_sqr[-1]]),
+    #        r'99$\%$ quantile - square', rotation='vertical')
 
     if region=='w':
         title = 'World'
@@ -464,4 +480,37 @@ def BC_vs_mixing(layouts):
     plt.legend()
     plt.savefig('./results/BC_vs_alpha.pdf')
 
+def BC_barplot(heights, labels, BC99sqr,\
+                 savepath="./results/", figfilename="BC_barplot.pdf"):
+    assert(len(heights)==len(labels)), "The number of Balancing capacities\
+                                        doesn't match the number of labels"
 
+    plt.close()
+    plt.rc('lines',lw=2)
+
+    N = len(heights)
+    width = 0.5
+    xloc = np.arange(N) + width/2
+    xmin = 0
+    xmax = xloc[-1]+3*width/2
+    print xloc
+
+    plt.bar(xloc, heights, width, color = au.blue)
+    plt.plot([xmin,xmax],BC99sqr*np.ones(2), linestyle='dashed', color='k')
+
+    plt.gcf().set_size_inches([1.3*au.dcolwidth, 0.6*au.dcolwidth])
+    if N>10:
+        plt.xticks(xloc+0.2*width, labels, rotation=60, va='top', ha='center')
+    if N<10:
+        plt.xticks(xloc+0.5*width, labels, rotation=60, va='top', ha='right')
+    plt.tick_params(\
+            axis='x',
+            which='both',
+            bottom='off',
+            top='off',
+            labelbottom='on')
+    plt.ylabel("Balancing capacity [normalized]")
+    plt.axis([xmin, xmax, 0, max(heights)*1.2])
+
+    plt.savefig(savepath+figfilename)
+    plt.close()
